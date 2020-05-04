@@ -3,7 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/OptionsProfitCalc.iml" filepath="$PROJECT_DIR$/.idea/OptionsProfitCalc.iml" />
-      <module fileurl="file://$PROJECT_DIR$/../optionsProfitCalculator/.idea/optionsProfitCalculator.iml" filepath="$PROJECT_DIR$/../optionsProfitCalculator/.idea/optionsProfitCalculator.iml" />
     </modules>
   </component>
 </project>
