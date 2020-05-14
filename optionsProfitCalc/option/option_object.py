@@ -20,7 +20,7 @@ class Option:
     def __init__(self, symbol=None, description=None, type=None, strikePrice=None, expirationDate=None, bid=None,
                  ask=None, mark=None, DTE=None, volatility=None, delta=None, gamma=None, theta=None, vega=None,
                  rho=None, openInterest=None, volume=None, expectedDTE=None, expectedValue=None,
-                 expectedVolatility=None):
+                 expectedVolatility=None, underlyingMark=None, underlyingExpected=None, underlyingCP=None):
         self.symbol = symbol
         self.description = description
         self.type = type
@@ -42,8 +42,11 @@ class Option:
         self.expectedValue = expectedValue
         self.expectedPercentChange = None
         if self.expectedValue is not None and self.expectedDTE is not None:
-            self.expectedPercentChange = (self.expectedValue - self.mark) / self.mark * 100
+            self.expectedPercentChange = self.calculateCP(self.mark, self.expectedValue)
         self.expectedVolatility = expectedVolatility
+        self.underlyingMark = underlyingMark
+        self.underlyingExpected = underlyingExpected
+        self.underlyingCP = underlyingCP
 
     def calculateDTE(self, date):
         dte = self.expirationDate - date
@@ -56,13 +59,18 @@ class Option:
             self.expectedVolatility = expectedVolatility
         self.expectedPercentChange = (self.expectedValue - self.mark) / self.mark * 100
 
-    def getExpectedValue(self, underlyingPrice, expectedDate):
-        tdc = tdameritrade.TDClient()
-        toDate = self.expirationDate + timedelta(days=1)
+    def calculateCP(self, start, end):
+        return (end - start)/start*100
+
+    def getExpectedValue(self, underlyingPrice, expectedDate, riskFreeLamda):
+        #tdc = tdameritrade.TDClient()
+        #toDate = self.expirationDate + timedelta(days=1)
+        self.underlyingExpected = underlyingPrice
+        self.underlyingCP = self.calculateCP(self.underlyingMark, self.underlyingExpected)
         self.expectedDTE = self.calculateDTE(expectedDate)
         self.volatility = .3976
-        interestRate = self.getRiskFree()(self.expectedDTE / 12)/100
-        print(interestRate)
+        interestRate = riskFreeLamda(self.expectedDTE / 30.5 / 12)/100
+        #print(interestRate)
         # option = tdc.optionsDF(strategy='ANALYTICAL',
         #                        symbol=self.symbol,
         #                        contractType=self.type,
@@ -101,7 +109,7 @@ class Option:
             print("Option type not recognized")
 
         self.setExpectedValue(expectedValue=eVal)
-        print("Vollib Value: " + str(self.expectedValue))
+        #print("Vollib Value: " + str(self.expectedValue))
 
         return self.expectedValue
 
@@ -132,12 +140,16 @@ class Option:
             years = (0, 1 / 12, 2 / 12, 3 / 12, 6 / 12, 1, 2, 3, 5, 7, 10, 20, 30)
             rates = (OVERNIGHT_RATE, m1, m2, m3, m6, y1, y2, y3, y5, y7, y10, y20, y30)
             # print(years, rates)
-            return interp1d(years, rates)
+            return interp1d(years, rates, fill_value="extrapolate")
         # If scraping treasury data fails use the constant fallback risk free rate
         except Exception:
             print('Exception getting current risk free rate: using default.')
             return lambda x: FALLBACK_RISK_FREE_RATE
 
     def __str__(self):
-        return "Option: " + self.description + " Value: " + str(self.mark) + " Expected Value: " \
-               + str(self.expectedValue)
+        # return "Option: " + self.description + " Value: " + str(self.mark) + " Expected Value: " \
+        #        + str(self.expectedValue) + " Option Percent Change: " + str(self.expectedPercentChange) \
+        #        + " Eq Percent Change: " + str(self.underlyingCP)
+
+        return f'Option: {self.description:40} Value: {self.mark:6.2f} Expected Value: {self.expectedValue:6.2f} ' \
+               f'Percent Change: {self.expectedPercentChange:8.2f}           Volume: {self.volume}'
