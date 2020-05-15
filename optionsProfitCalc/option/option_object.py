@@ -1,5 +1,7 @@
 import datetime
 from datetime import timedelta
+
+import py_lets_be_rational
 import requests
 from bs4 import BeautifulSoup
 from scipy.interpolate import interp1d
@@ -9,10 +11,13 @@ import tdameritrade
 import mibian
 import py_vollib
 from py_vollib import black
+from py_vollib.black_scholes import implied_volatility
+from py_vollib.black import implied_volatility
 
 TREASURY_URL = "http://www.treasury.gov/resource-center/data-chart-center/interest-rates/Pages/TextView.aspx?data=yield"
 OVERNIGHT_RATE = 0
 FALLBACK_RISK_FREE_RATE = 0.02
+FALLBACK_VOLATILITY = 0.01
 
 
 class Option:
@@ -30,7 +35,7 @@ class Option:
         self.ask = ask
         self.mark = mark
         self.DTE = DTE
-        self.volatility = volatility
+        self.volatility = volatility/100
         self.delta = delta
         self.gamma = gamma
         self.theta = theta
@@ -47,6 +52,7 @@ class Option:
         self.underlyingMark = underlyingMark
         self.underlyingExpected = underlyingExpected
         self.underlyingCP = underlyingCP
+        self.volPerm = volatility
 
     def calculateDTE(self, date):
         dte = self.expirationDate - date
@@ -60,17 +66,16 @@ class Option:
         self.expectedPercentChange = (self.expectedValue - self.mark) / self.mark * 100
 
     def calculateCP(self, start, end):
-        return (end - start)/start*100
+        return (end - start) / start * 100
 
     def getExpectedValue(self, underlyingPrice, expectedDate, riskFreeLamda):
-        #tdc = tdameritrade.TDClient()
-        #toDate = self.expirationDate + timedelta(days=1)
+        # tdc = tdameritrade.TDClient()
+        # toDate = self.expirationDate + timedelta(days=1)
         self.underlyingExpected = underlyingPrice
         self.underlyingCP = self.calculateCP(self.underlyingMark, self.underlyingExpected)
         self.expectedDTE = self.calculateDTE(expectedDate)
-        self.volatility = .3976
-        interestRate = riskFreeLamda(self.expectedDTE / 30.5 / 12)/100
-        #print(interestRate)
+        interestRate = riskFreeLamda(self.expectedDTE / 30.5 / 12) / 100
+        # print(interestRate)
         # option = tdc.optionsDF(strategy='ANALYTICAL',
         #                        symbol=self.symbol,
         #                        contractType=self.type,
@@ -100,16 +105,15 @@ class Option:
         # print("Mibian Value: " + str(self.expectedValue))
         eVal = 0.0
         if self.type == 'CALL':
-            eVal = py_vollib.black.black('c', underlyingPrice, self.strikePrice, self.expectedDTE / 365,
-                                         interestRate, self.volatility)
+            flag = 'c'
         elif self.type == 'PUT':
-            eVal = py_vollib.black.black('p', underlyingPrice, self.strikePrice, self.expectedDTE / 365,
-                                         interestRate, self.volatility)
+            flag = 'p'
         else:
             print("Option type not recognized")
-
+        eVal = py_vollib.black_scholes.black_scholes(flag=flag, S=underlyingPrice, K=self.strikePrice,
+                                                     t=self.expectedDTE / 365, r=interestRate, sigma=self.volatility)
         self.setExpectedValue(expectedValue=eVal)
-        #print("Vollib Value: " + str(self.expectedValue))
+        # print("Vollib Value: " + str(self.expectedValue))
 
         return self.expectedValue
 
@@ -146,10 +150,27 @@ class Option:
             print('Exception getting current risk free rate: using default.')
             return lambda x: FALLBACK_RISK_FREE_RATE
 
+    def getIV(self, interest):
+        if self.type == 'CALL':
+            flag = 'c'
+        elif self.type == 'PUT':
+            flag = 'p'
+        else:
+            print("type error.")
+        try:
+            iv = py_vollib.black_scholes.implied_volatility.implied_volatility(price=self.mark, K=self.strikePrice,
+                                                                               t=self.expectedDTE / 365, r=interest,
+                                                                               flag=flag, S=self.underlyingMark)
+            # print(f"Successful IV Calc!: {iv}")
+        except:
+            iv = FALLBACK_VOLATILITY
+        return iv
+
     def __str__(self):
         # return "Option: " + self.description + " Value: " + str(self.mark) + " Expected Value: " \
         #        + str(self.expectedValue) + " Option Percent Change: " + str(self.expectedPercentChange) \
         #        + " Eq Percent Change: " + str(self.underlyingCP)
 
         return f'Option: {self.description:40} Value: {self.mark:6.2f} Expected Value: {self.expectedValue:6.2f} ' \
-               f'Percent Change: {self.expectedPercentChange:8.2f}           Volume: {self.volume}'
+               f'Percent Change: {self.expectedPercentChange:8.2f}       Volume: {self.volume} Volatility: ' \
+               f'{self.volatility}'
