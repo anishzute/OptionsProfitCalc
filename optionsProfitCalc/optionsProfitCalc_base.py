@@ -2,6 +2,8 @@ import datetime
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import matplotlib.units as munits
 import numpy as np
 import seaborn as sb
 import requests
@@ -10,6 +12,9 @@ from bs4 import BeautifulSoup
 from scipy.interpolate import interp1d
 from tdameritrade import auth
 import matplotlib.colors as mcolors
+from mpldatacursor import datacursor
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 
 # from optionsProfitCalc.option.option_object import Option
 from optionsProfitCalc.option.option_object import Option
@@ -181,64 +186,129 @@ def sortChainByProfit(optionsChain):
 
 def plotOptionsChainProfits(optionsChain):
     print("Creating options profits plot...")
+    minVol = 0
     callList = []
     putList = []
     for option in optionsChain:
         expDate = option.expirationDate
         strike = option.strikePrice
         cp = option.expectedPercentChange
+        vol = option.volume
         # if cp < 0:
         #     print(cp)
-        optionList = [expDate, strike, cp]
-        if option.type == 'CALL':
-            callList.append(optionList)
-        else:
-            putList.append(optionList)
-    callDF = pd.DataFrame(callList, columns=["Expiration Date", "Strike Price", "Percent Change"])
-    putDF = pd.DataFrame(putList, columns=["Expiration Date", "Strike Price", "Percent Change"])
+        if vol >= minVol:
+            optionList = [datetime.datetime.combine(expDate, datetime.time()), strike, cp]
+            if option.type == 'CALL':
+                callList.append(optionList)
+            else:
+                putList.append(optionList)
 
-    callDF = callDF.pivot("Strike Price", "Expiration Date", "Percent Change")[::-1]
-    putDF = putDF.pivot("Strike Price", "Expiration Date", "Percent Change")[::-1]
-
-    pal = sb.diverging_palette(0, 500, n=5)
-
-    # plt.pcolormesh(putDF, cmap="coolwarm", norm=mcolors.DivergingNorm(0))
-    # # sb.heatmap(callDF, norm=DivergingNorm(0),  cmap=pal)
-    # plt.yticks(np.arange(0.5, len(callDF.index), 1), callDF.index)
-    # plt.xticks(np.arange(0.5, len(callDF.columns), 1), callDF.columns)
-    # plt.show()
-
-    pal = sb.diverging_palette(0, 500, sep=1, n=7)
-    sb.set(font_scale=.5)
-    fig, ax = plt.subplots(figsize=(25, 50))
-    plt.subplot(211)
-    sb.heatmap(callDF, center=0, cmap=pal)
-    plt.subplot(212)
-    sb.heatmap(putDF, center=0, cmap=pal)
+    callax = makePlot(callList)
+    putax = makePlot(putList)
+    # if len(callax) > len(putax):
+    #     cols = len(callax)
+    # else:
+    #     cols = len(putax)
+    # fig, axs = plt.subplots(2, cols)
+    # x=1
+    # for ax in callax:
+    #     fig.add_subplot(1,x,x)
+    #
+    # # callax.title("Calls")
     plt.show()
+
+
+
+def makePlot(optionsList):
+    pal = sb.diverging_palette(0, 500, sep=1, n=9)
+    max = optionsList[0][2]
+    print(max)
+    sb.set(font_scale=1)
+    df = pd.DataFrame(optionsList, columns=["Expiration Date", "Strike Price", "Percent Change"])
+    df = df.sort_values('Expiration Date')
+    years = df['Expiration Date'].dt.year.unique()
+    print(years)
+    dfs = []
+    for year in years:
+        dfx = df[df['Expiration Date'].dt.year == year]
+        dfxpivot = dfx.pivot("Strike Price", "Expiration Date", "Percent Change")[::-1]
+        dfxpivot.columns = dfxpivot.columns.strftime('%m-%d')
+        dfs.append(dfxpivot)
+
+    fig, axs = plt.subplots(1, len(years), figsize=(16,9), gridspec_kw={'hspace': 0, 'wspace': .25})
+
+    x = 0
+    for year in years:
+        if x == len(years) - 1:
+            cbar = True
+        else:
+            cbar = False
+        sb.set(font_scale=.5)
+        if x != 0:
+            xSpace = 1
+        else:
+            xSpace = 2
+
+        # axins1 = inset_axes(axs[x],
+        #                     width="100%",  # width = 50% of parent_bbox width
+        #                     height="5%",  # height : 5%
+        #                     loc='upper center',
+        #                     bbox_to_anchor=(0,-1, 1, 1),
+        #                     bbox_transform=axs[x].transAxes,
+        #                     borderpad=0,
+        #                     )
+        ax_divider = make_axes_locatable(axs[x])
+        cax = ax_divider.append_axes("top", size="7%", pad="2%")
+        sb.heatmap(dfs[x],
+                   fmt=".0f",
+                   center=0,
+                   cmap=pal,
+                   ax=axs[x],
+                   annot=False,
+                   annot_kws={"size": 3},
+                   cbar=True,
+                   cbar_ax=cax,
+                   cbar_kws=dict(orientation='horizontal'),
+                   xticklabels='auto',
+                   yticklabels='auto',
+                   robust=True,
+                   # vmax=max,
+                   # vmin=-90
+                   )
+        cax.xaxis.set_ticks_position("top")
+        axs[x].set_xlabel(str(year))
+        axs[x].yaxis.set_tick_params(rotation=0)
+        axs[x].xaxis.set_tick_params(rotation=45)
+        if x != 0:
+            axs[x].set_ylabel('')
+        x += 1
+
+    plt.gcf().subplots_adjust(bottom=0.25)
+    datacursor(display='single', xytext=(15,-15), bbox=dict(fc='white'))
+    return axs
+
+
     #
-    # d1 = datetime.date(day=10, month=5, year=2020)
-    # d2 = datetime.date(day=15, month=6, year=2020)
-    # d3 = datetime.date(day=20, month=7, year=2020)
+    # fig, (ax, ax1, ax2) = plt.subplots(1, 3)
     #
-    # s1 = 100
-    # s2 = 150
-    # s3 = 200
+    # sb.heatmap(pivot1, fmt=".0f", center=0, cmap=pal, ax=ax, robust=True, annot=False, annot_kws={"size": 3}, cbar=False)
+    # ax.xlabel(year)
+    # ax.yaxis.set_tick_params(rotation=0)
+    # ax.xaxis.set_tick_params(rotation=45)
+    # sb.heatmap(pivot2, fmt=".0f", center=0, cmap=pal, ax=ax1, robust=True, annot=True, annot_kws={"size": 3}, cbar=False)
+    # ax1.yaxis.set_tick_params(rotation=0)
+    # ax1.xaxis.set_tick_params(rotation=45)
+    # sb.heatmap(pivot3, fmt=".0f", center=0, cmap=pal, ax=ax2, robust=True, annot=True, annot_kws={"size": 3}, cbar=True)
+    # ax2.yaxis.set_tick_params(rotation=0)
+    # ax2.xaxis.set_tick_params(rotation=45)
     #
-    # o1 = [d1, s1, 100]
-    # o2 = [d1, s2, 5]
-    # o3 = [d1, s3, 20]
-    # o4 = [d2, s1, 50]
-    # o5 = [d2, s2, 10]
-    # o6 = [d2, s3, -45]
-    # o7 = [d3, s1, -7]
-    # o8 = [d3, s2, -30]
-    # o9 = [d3, s3, -100]
+    # fig.autofmt_xdate()
+    # # ax.yaxis.
+    # # ax.fmt_xdata = mdates.DateFormatter('%m-%d-%y')
+    # # plt.tight_layout()
     #
-    # chain = [o1, o2, o3, o4, o5, o6, o7, o8, o9]
     #
-    # df = pd.DataFrame(chain, columns=['Date', 'Strike', 'Value'])
-    # df1 = df.pivot("Strike", "Date", "Value")[::-1]
+    # plt.show()
 
 
 authenticateAndLoad()
@@ -250,41 +320,12 @@ authenticateAndLoad()
 #     budget = float(budget)
 # except:
 #     budget = None
-symbol = 'SPY'
-price = 300
+symbol = 'TSLA'
+price = 700
 eDate = "2020-05-20"
-budget = None
+budget = 5000
 
 o = loadOptions(symbol, budget=budget)
 p = calculateValues(o, price, datetime.date.fromisoformat(eDate))
 s = sortChainByProfit(p)
 plotOptionsChainProfits(s)
-print(s[0],"\n",s[1])
-
-#
-# optionIn = td.optionsDF('SPY', fromDate=d.isoformat()).head(1)
-# # print(optionIn.columns)
-# # print(optionIn['expirationDate'].values[0])
-# expDate = str(optionIn['expirationDate'].values[0])
-# sym = optionIn['symbol'].values[0]
-# option = Option(symbol=sym[:sym.find('_')],
-#                 description=optionIn['description'].values[0],
-#                 type=optionIn['putCall'].values[0],
-#                 strikePrice=optionIn['strikePrice'].values[0],
-#                 expirationDate=datetime.date.fromisoformat(expDate[:expDate.find('T')]),
-#                 bid=optionIn['bid'].values[0],
-#                 ask=optionIn['ask'].values[0],
-#                 mark=optionIn['mark'].values[0],
-#                 volatility=optionIn['volatility'].values[0],
-#                 delta=optionIn['delta'].values[0],
-#                 gamma=optionIn['gamma'].values[0],
-#                 theta=optionIn['theta'].values[0],
-#                 vega=optionIn['vega'].values[0],
-#                 rho=optionIn['rho'].values[0],
-#                 openInterest=optionIn['openInterest'].values[0],
-#                 volume=optionIn['totalVolume'].values[0])
-# print(option)
-# #print(expDate[:expDate.find('T')])
-# d = datetime.date(day=15, month=5, year=2020)
-# print(option.getExpectedValue(240, d))
-# print(option.expectedPercentChange)

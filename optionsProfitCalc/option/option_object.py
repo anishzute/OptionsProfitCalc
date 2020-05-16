@@ -172,5 +172,5 @@ class Option:
         #        + " Eq Percent Change: " + str(self.underlyingCP)
 
         return f'Option: {self.description:40} Value: {self.mark:6.2f} Expected Value: {self.expectedValue:6.2f} ' \
-               f'Percent Change: {self.expectedPercentChange:8.2f}       Volume: {self.volume} Volatility: ' \
-               f'{self.volatility}'
+               f'   Percent Change: {self.expectedPercentChange:10.2f}       Volume: {self.volume:8}    Volatility: ' \
+               f'{self.volatility*100:.2f}%'
